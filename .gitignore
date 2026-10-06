@@ -1,6 +1,7 @@
 config.json
 alerts_sent.json
 domains.json
+inventory/
 logs/
 __pycache__/
 *.pyc
