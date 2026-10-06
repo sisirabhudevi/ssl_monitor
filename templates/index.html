@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>cert-pulse</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3350;
+      --accent: #6c63ff;
+      --accent2: #48cfad;
+      --danger: #ff5c5c;
+      --warn: #ffb347;
+      --text: #e8eaf6;
+      --muted: #8b90a7;
+      --radius: 10px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .logo { font-size: 1.4rem; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; }
+    .logo span { color: var(--accent2); }
+    .header-actions { display: flex; gap: 10px; }
+
+    main { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px; }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      text-align: center;
+    }
+    .stat-card .num { font-size: 2rem; font-weight: 700; }
+    .stat-card .label { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
+    .num.danger { color: var(--danger); }
+    .num.warn { color: var(--warn); }
+    .num.good { color: var(--accent2); }
+
+    .section-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.8rem; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+    td { padding: 12px; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--surface2); }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge.expired  { background: rgba(255,92,92,0.15); color: var(--danger); }
+    .badge.expiring { background: rgba(255,179,71,0.15); color: var(--warn); }
+    .badge.ok       { background: rgba(72,207,173,0.15); color: var(--accent2); }
+    .badge.error    { background: rgba(139,144,167,0.15); color: var(--muted); }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 18px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.88rem;
+      font-weight: 600;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    .btn-sm { padding: 5px 12px; font-size: 0.8rem; }
+
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-group label { font-size: 0.82rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
+    .form-group input, .form-group textarea {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 10px 14px;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .form-group input:focus, .form-group textarea:focus { border-color: var(--accent); }
+    .form-group textarea { resize: vertical; min-height: 90px; font-family: monospace; }
+    .form-full { grid-column: 1 / -1; }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-bottom: 32px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 18px;
+    }
+    .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--accent2); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    .spinner { display: none; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .manual-check { display: flex; gap: 10px; margin-bottom: 0; }
+    .manual-check input { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 10px 14px; font-size: 0.9rem; outline: none; }
+    .manual-check input:focus { border-color: var(--accent); }
+
+    #check-result {
+      margin-top: 14px;
+      padding: 14px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      display: none;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+    }
+
+    .tabs { display: flex; gap: 4px; margin-bottom: 20px; }
+    .tab { padding: 8px 18px; border-radius: 8px; cursor: pointer; font-size: 0.88rem; font-weight: 600; color: var(--muted); transition: all 0.15s; border: 1px solid transparent; }
+    .tab.active { background: var(--surface2); color: var(--text); border-color: var(--border); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .empty { text-align: center; color: var(--muted); padding: 40px; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">cert<span>pulse</span></div>
+  <div class="header-actions">
+    <button class="btn btn-outline btn-sm" onclick="scanNow()">
+      <span class="spinner" id="scan-spinner"></span>
+      Scan All Now
+    </button>
+  </div>
+</header>
+
+<main>
+
+  <div class="status-bar">
+    <div class="pulse"></div>
+    <span id="status-text">Loading status...</span>
+  </div>
+
+  <div class="stats" id="stats">
+    <div class="stat-card"><div class="num" id="stat-total">—</div><div class="label">Domains Monitored</div></div>
+    <div class="stat-card"><div class="num danger" id="stat-expired">—</div><div class="label">Expired</div></div>
+    <div class="stat-card"><div class="num warn" id="stat-expiring">—</div><div class="label">Expiring Soon</div></div>
+    <div class="stat-card"><div class="num good" id="stat-ok">—</div><div class="label">Healthy</div></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('domains')">Domains</div>
+    <div class="tab" onclick="switchTab('check')">Manual Check</div>
+    <div class="tab" onclick="switchTab('settings')">Settings</div>
+  </div>
+
+  <!-- Domains tab -->
+  <div class="tab-content active" id="tab-domains">
+    <div class="card">
+      <div class="section-title">Certificate Status</div>
+      <div id="domains-loading" style="text-align:center;padding:30px;color:var(--muted)">Checking certificates...</div>
+      <table id="domains-table" style="display:none">
+        <thead>
+          <tr>
+            <th>Domain</th>
+            <th>Owner</th>
+            <th>Expiry Date</th>
+            <th>Days Left</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="domains-body"></tbody>
+      </table>
+      <div class="empty" id="domains-empty" style="display:none">No domains configured. Add them in Settings.</div>
+    </div>
+  </div>
+
+  <!-- Manual check tab -->
+  <div class="tab-content" id="tab-check">
+    <div class="card">
+      <div class="section-title">Check a Domain</div>
+      <div class="manual-check">
+        <input type="text" id="check-domain" placeholder="e.g. github.com" onkeydown="if(event.key==='Enter')checkDomain()" />
+        <button class="btn btn-primary" onclick="checkDomain()">Check</button>
+      </div>
+      <div id="check-result"></div>
+    </div>
+  </div>
+
+  <!-- Settings tab -->
+  <div class="tab-content" id="tab-settings">
+    <div class="card">
+      <div class="section-title" style="margin-bottom:20px">Settings</div>
+      <form action="/save_settings" method="POST">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Slack Webhook URL</label>
+            <input type="text" name="slack_webhook" value="{{ config.get('slack_webhook','') }}" placeholder="https://hooks.slack.com/services/..." />
+          </div>
+          <div class="form-group">
+            <label>Slack Bot Token</label>
+            <input type="text" name="slack_bot_token" value="{{ config.get('slack_bot_token','') }}" placeholder="xoxb-..." />
+          </div>
+          <div class="form-group form-full">
+            <label>Domain Owners (one per line: domain: email)</label>
+            <textarea name="domain_owners_raw" placeholder="github.com: alice@company.com&#10;example.com: bob@company.com">{% for domain, email in config.get('domain_owners',{}).items() %}{{ domain }}: {{ email }}
+{% endfor %}</textarea>
+          </div>
+        </div>
+        <div style="margin-top:20px">
+          <button type="submit" class="btn btn-primary">Save Settings</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+</main>
+
+<script>
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  const tabs = ['domains','check','settings'];
+  document.querySelectorAll('.tab')[tabs.indexOf(name)].classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+function badge(days, error) {
+  if (error) return '<span class="badge error">Error</span>';
+  if (days < 0) return '<span class="badge expired">Expired</span>';
+  if (days <= 30) return '<span class="badge expiring">Expiring</span>';
+  return '<span class="badge ok">Healthy</span>';
+}
+
+function daysColor(days, error) {
+  if (error || days === null) return 'color:var(--muted)';
+  if (days < 0) return 'color:var(--danger);font-weight:700';
+  if (days <= 30) return 'color:var(--warn);font-weight:700';
+  return 'color:var(--accent2)';
+}
+
+async function loadDomains() {
+  try {
+    const res = await fetch('/domains');
+    const data = await res.json();
+    const tbody = document.getElementById('domains-body');
+    document.getElementById('domains-loading').style.display = 'none';
+    if (!data.length) {
+      document.getElementById('domains-empty').style.display = 'block';
+      return;
+    }
+    document.getElementById('domains-table').style.display = 'table';
+    let expired = 0, expiring = 0, ok = 0;
+    tbody.innerHTML = data.map(d => {
+      if (d.error) {}
+      else if (d.days < 0) expired++;
+      else if (d.days <= 30) expiring++;
+      else ok++;
+      return `<tr>
+        <td><strong>${d.domain}</strong></td>
+        <td style="color:var(--muted)">${d.owner}</td>
+        <td>${d.expiry || '—'}</td>
+        <td style="${daysColor(d.days, d.error)}">${d.days !== null ? d.days + 'd' : '—'}</td>
+        <td>${badge(d.days, d.error)}</td>
+      </tr>`;
+    }).join('');
+    document.getElementById('stat-total').textContent = data.length;
+    document.getElementById('stat-expired').textContent = expired;
+    document.getElementById('stat-expiring').textContent = expiring;
+    document.getElementById('stat-ok').textContent = ok;
+  } catch(e) {
+    document.getElementById('domains-loading').textContent = 'Failed to load.';
+  }
+}
+
+async function loadStatus() {
+  try {
+    const res = await fetch('/monitor_status');
+    const d = await res.json();
+    const el = document.getElementById('status-text');
+    if (d.last_scan) {
+      const t = new Date(d.last_scan).toLocaleString();
+      el.textContent = `Last scan: ${t} (took ${d.scan_duration}s) · Next scans: 7:35 AM and 7:35 PM`;
+    } else {
+      el.textContent = 'Waiting for first scan · Scheduled: 7:35 AM and 7:35 PM daily';
+    }
+  } catch(e) {}
+}
+
+async function scanNow() {
+  const spinner = document.getElementById('scan-spinner');
+  spinner.style.display = 'inline-block';
+  try {
+    await fetch('/scan_now', { method: 'POST' });
+    setTimeout(() => { spinner.style.display = 'none'; loadStatus(); loadDomains(); }, 3000);
+  } catch(e) { spinner.style.display = 'none'; }
+}
+
+async function checkDomain() {
+  const domain = document.getElementById('check-domain').value.trim();
+  if (!domain) return;
+  const result = document.getElementById('check-result');
+  result.style.display = 'block';
+  result.textContent = 'Checking...';
+  try {
+    const res = await fetch('/check', { method: 'POST', body: new URLSearchParams({ domain }) });
+    const d = await res.json();
+    if (d.error) {
+      result.innerHTML = `<span style="color:var(--danger)">Error: ${d.error}</span>`;
+    } else if (d.days < 0) {
+      result.innerHTML = `<span style="color:var(--danger)">❌ <strong>${d.domain}</strong> — certificate EXPIRED on ${d.expiry}</span>`;
+    } else if (d.days <= 30) {
+      result.innerHTML = `<span style="color:var(--warn)">⚠️ <strong>${d.domain}</strong> — expires in ${d.days} days (${d.expiry})</span>`;
+    } else {
+      result.innerHTML = `<span style="color:var(--accent2)">✅ <strong>${d.domain}</strong> — healthy, expires ${d.expiry} (${d.days} days)</span>`;
+    }
+  } catch(e) {
+    result.innerHTML = `<span style="color:var(--danger)">Request failed.</span>`;
+  }
+}
+
+loadStatus();
+loadDomains();
+</script>
+</body>
+</html>

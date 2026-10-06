@@ -1,0 +1,9 @@
+config.json
+alerts_sent.json
+domains.json
+logs/
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+dist/
