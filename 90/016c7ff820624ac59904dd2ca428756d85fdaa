@@ -1,0 +1,24 @@
+.gitignore
+  h_676c4cdc4eea50 1-9
+README.md
+  h_676c4cdc4eea50 1-124
+app.py
+  h_676c4cdc4eea50 1-276
+domains.json.example
+  h_676c4cdc4eea50 1-5
+requirements.txt
+  h_676c4cdc4eea50 1-2
+templates/index.html
+  h_676c4cdc4eea50 1-356
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "90016c7ff820624ac59904dd2ca428756d85fdaa",
+  "prompts": {},
+  "humans": {
+    "h_676c4cdc4eea50": {
+      "author": "Sisira Bhudevi <sisirabhudevi@gmail.com>"
+    }
+  }
+}
