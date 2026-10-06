@@ -1,18 +1,13 @@
-# cert-pulse
+# ssl-monitor
 
-A lightweight SSL certificate expiry monitor with automated Slack alerts and a web dashboard.
+A lightweight SSL certificate expiry monitor with automated email alerts and a web dashboard.
 
 - Checks SSL certs across all your domains twice daily
-- Sends Slack alerts for certificates expiring within 30 days (or already expired)
-- Groups alerts by domain owner — one message per person, with @mention
+- Sends email alerts for certificates expiring within 30 days (or already expired)
+- Groups alerts by domain owner — each owner gets their own email
 - Deduplicates: each alert fires once per am/pm slot, not repeatedly
 - Web dashboard for manual checks and live status
-
-## Screenshot
-
-| Dashboard | Manual check |
-|---|---|
-| Domains table with expiry status | Type any domain, see its cert info instantly |
+- No external dependencies for cert checking — uses Python's built-in `ssl` module
 
 ## Setup
 
@@ -32,9 +27,12 @@ Open `http://localhost:5051` in your browser.
 
 | Field | Description |
 |---|---|
-| Slack Webhook URL | Incoming webhook for your alerts channel |
-| Slack Bot Token | `xoxb-…` token — used to @mention owners |
-| Domain Owners | One line per domain: `github.com: alice@yourcompany.com` |
+| SMTP Host | e.g. `smtp.gmail.com` |
+| SMTP Port | `587` for TLS (recommended), `465` for SSL |
+| SMTP Username | Your sender email address |
+| SMTP Password | Password or App Password (Gmail requires an App Password) |
+| From Address | Optional — defaults to SMTP Username |
+| Domain → Alert Recipient | One line per domain: `github.com: alice@yourcompany.com` |
 
 Config is saved locally to `config.json` (excluded from git).
 
@@ -47,16 +45,15 @@ SCAN_TIMES = ((7, 35), (19, 35))  # scan 25 min early so alerts land by 8am and 
 ```
 
 A background thread wakes at 7:35 AM and 7:35 PM, checks every configured domain,
-and sends Slack alerts for certs that are expiring or expired.
+and sends email alerts for certs that are expiring or expired.
 
 ### Alert deduplication
 
-`alerts_sent.json` (local, not committed) tracks which alerts fired:
+`alerts_sent.json` (local, not committed) tracks which alerts already fired:
 - Key: domain name
 - Value: `"YYYY-MM-DD-am"` or `"YYYY-MM-DD-pm"`
 
-Each daily slot (am/pm) fires independently, so you get at most 2 alerts per domain per day.
-Once an alert fires for the pm slot, it won't fire again until the next day.
+Each daily slot (am/pm) fires independently. Once an alert fires for a slot, it won't fire again until the next day's slot.
 
 To force a re-send (e.g. for testing):
 ```bash
@@ -65,7 +62,7 @@ echo '{}' > alerts_sent.json
 
 ### Cert check
 
-Uses Python's built-in `ssl` + `socket` modules — no external dependencies for the check itself:
+Uses Python's built-in `ssl` + `socket` modules — no external dependencies:
 
 ```python
 def check_cert(domain, port=443):
@@ -78,16 +75,18 @@ def check_cert(domain, port=443):
     return expiry.strftime("%Y-%m-%d"), days, None
 ```
 
-### Slack alert format
+### Email alert format
 
 ```
-🔴 SSL Certificate Alert | @alice
+Subject: SSL Alert: 2 certificates need attention
 
-  • *github.com* — expires in 12 days
-  • *api.example.com* — certificate EXPIRED
+- github.com — expires in 12 days (expires 2025-02-01)
+- api.example.com — certificate EXPIRED (expires 2024-12-15)
 
-🤖 Automated Cert Report | Generated: 2025-01-15 08:00 AM
+Generated: 2025-01-15 08:00 AM · ssl-monitor
 ```
+
+Emails are sent as both plain text and HTML.
 
 ## API
 
@@ -110,13 +109,13 @@ WARN_DAYS = 30  # alert when cert expires within this many days
 ## Project structure
 
 ```
-cert-pulse/
-├── app.py              # Flask app + background scheduler + Slack alerts
+ssl-monitor/
+├── app.py                 # Flask app + background scheduler + email alerts
 ├── requirements.txt
 ├── .gitignore
 ├── domains.json.example
 └── templates/
-    └── index.html      # Web dashboard
+    └── index.html         # Web dashboard
 ```
 
 ## License

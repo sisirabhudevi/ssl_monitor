@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>cert-pulse</title>
+  <title>ssl-monitor</title>
   <style>
     :root {
       --bg: #0f1117;
@@ -49,7 +49,7 @@
     .num.warn { color: var(--warn); }
     .num.good { color: var(--accent2); }
 
-    .section-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.8rem; }
+    .section-title { margin-bottom: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.8rem; font-weight: 600; }
 
     .card {
       background: var(--surface);
@@ -108,8 +108,9 @@
       transition: border-color 0.15s;
     }
     .form-group input:focus, .form-group textarea:focus { border-color: var(--accent); }
-    .form-group textarea { resize: vertical; min-height: 90px; font-family: monospace; }
+    .form-group textarea { resize: vertical; min-height: 100px; font-family: monospace; }
     .form-full { grid-column: 1 / -1; }
+    .form-hint { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
 
     .status-bar {
       display: flex;
@@ -123,13 +124,13 @@
       border-radius: var(--radius);
       padding: 12px 18px;
     }
-    .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--accent2); animation: pulse 2s infinite; }
+    .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--accent2); animation: pulse 2s infinite; flex-shrink: 0; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
     .spinner { display: none; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    .manual-check { display: flex; gap: 10px; margin-bottom: 0; }
+    .manual-check { display: flex; gap: 10px; }
     .manual-check input { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 10px 14px; font-size: 0.9rem; outline: none; }
     .manual-check input:focus { border-color: var(--accent); }
 
@@ -150,12 +151,13 @@
     .tab-content.active { display: block; }
 
     .empty { text-align: center; color: var(--muted); padding: 40px; font-size: 0.9rem; }
+    .section-sep { margin: 20px 0 16px; border: none; border-top: 1px solid var(--border); }
   </style>
 </head>
 <body>
 
 <header>
-  <div class="logo">cert<span>pulse</span></div>
+  <div class="logo">ssl<span>monitor</span></div>
   <div class="header-actions">
     <button class="btn btn-outline btn-sm" onclick="scanNow()">
       <span class="spinner" id="scan-spinner"></span>
@@ -171,7 +173,7 @@
     <span id="status-text">Loading status...</span>
   </div>
 
-  <div class="stats" id="stats">
+  <div class="stats">
     <div class="stat-card"><div class="num" id="stat-total">—</div><div class="label">Domains Monitored</div></div>
     <div class="stat-card"><div class="num danger" id="stat-expired">—</div><div class="label">Expired</div></div>
     <div class="stat-card"><div class="num warn" id="stat-expiring">—</div><div class="label">Expiring Soon</div></div>
@@ -193,7 +195,7 @@
         <thead>
           <tr>
             <th>Domain</th>
-            <th>Owner</th>
+            <th>Alert Recipient</th>
             <th>Expiry Date</th>
             <th>Days Left</th>
             <th>Status</th>
@@ -220,21 +222,38 @@
   <!-- Settings tab -->
   <div class="tab-content" id="tab-settings">
     <div class="card">
-      <div class="section-title" style="margin-bottom:20px">Settings</div>
+      <div class="section-title" style="margin-bottom:20px">Email Alert Settings</div>
       <form action="/save_settings" method="POST">
         <div class="form-grid">
           <div class="form-group">
-            <label>Slack Webhook URL</label>
-            <input type="text" name="slack_webhook" value="{{ config.get('slack_webhook','') }}" placeholder="https://hooks.slack.com/services/..." />
+            <label>SMTP Host</label>
+            <input type="text" name="smtp_host" value="{{ config.get('smtp_host','') }}" placeholder="smtp.gmail.com" />
           </div>
           <div class="form-group">
-            <label>Slack Bot Token</label>
-            <input type="text" name="slack_bot_token" value="{{ config.get('slack_bot_token','') }}" placeholder="xoxb-..." />
+            <label>SMTP Port</label>
+            <input type="number" name="smtp_port" value="{{ config.get('smtp_port', 587) }}" placeholder="587" />
+            <span class="form-hint">587 for TLS (recommended), 465 for SSL</span>
+          </div>
+          <div class="form-group">
+            <label>SMTP Username</label>
+            <input type="text" name="smtp_user" value="{{ config.get('smtp_user','') }}" placeholder="you@gmail.com" />
+          </div>
+          <div class="form-group">
+            <label>SMTP Password / App Password</label>
+            <input type="password" name="smtp_password" value="{{ config.get('smtp_password','') }}" placeholder="••••••••" />
+            <span class="form-hint">For Gmail, use an App Password</span>
           </div>
           <div class="form-group form-full">
-            <label>Domain Owners (one per line: domain: email)</label>
-            <textarea name="domain_owners_raw" placeholder="github.com: alice@company.com&#10;example.com: bob@company.com">{% for domain, email in config.get('domain_owners',{}).items() %}{{ domain }}: {{ email }}
+            <label>From Address (optional)</label>
+            <input type="text" name="alert_from" value="{{ config.get('alert_from','') }}" placeholder="cert-pulse@yourdomain.com" />
+            <span class="form-hint">Defaults to SMTP Username if left blank</span>
+          </div>
+          <hr class="section-sep form-full" />
+          <div class="form-group form-full">
+            <label>Domain → Alert Recipient (one per line)</label>
+            <textarea name="domain_owners_raw" placeholder="github.com: alice@yourcompany.com&#10;api.example.com: bob@yourcompany.com">{% for domain, email in config.get('domain_owners',{}).items() %}{{ domain }}: {{ email }}
 {% endfor %}</textarea>
+            <span class="form-hint">Each domain's alert email is sent to the address on its line</span>
           </div>
         </div>
         <div style="margin-top:20px">
@@ -248,9 +267,9 @@
 
 <script>
 function switchTab(name) {
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
   const tabs = ['domains','check','settings'];
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab')[tabs.indexOf(name)].classList.add('active');
   document.getElementById('tab-' + name).classList.add('active');
 }
@@ -273,22 +292,26 @@ async function loadDomains() {
   try {
     const res = await fetch('/domains');
     const data = await res.json();
-    const tbody = document.getElementById('domains-body');
     document.getElementById('domains-loading').style.display = 'none';
     if (!data.length) {
       document.getElementById('domains-empty').style.display = 'block';
+      document.getElementById('stat-total').textContent = 0;
+      document.getElementById('stat-expired').textContent = 0;
+      document.getElementById('stat-expiring').textContent = 0;
+      document.getElementById('stat-ok').textContent = 0;
       return;
     }
     document.getElementById('domains-table').style.display = 'table';
     let expired = 0, expiring = 0, ok = 0;
-    tbody.innerHTML = data.map(d => {
-      if (d.error) {}
-      else if (d.days < 0) expired++;
-      else if (d.days <= 30) expiring++;
-      else ok++;
+    document.getElementById('domains-body').innerHTML = data.map(d => {
+      if (!d.error) {
+        if (d.days < 0) expired++;
+        else if (d.days <= 30) expiring++;
+        else ok++;
+      }
       return `<tr>
         <td><strong>${d.domain}</strong></td>
-        <td style="color:var(--muted)">${d.owner}</td>
+        <td style="color:var(--muted);font-size:0.85rem">${d.owner}</td>
         <td>${d.expiry || '—'}</td>
         <td style="${daysColor(d.days, d.error)}">${d.days !== null ? d.days + 'd' : '—'}</td>
         <td>${badge(d.days, d.error)}</td>
@@ -310,7 +333,7 @@ async function loadStatus() {
     const el = document.getElementById('status-text');
     if (d.last_scan) {
       const t = new Date(d.last_scan).toLocaleString();
-      el.textContent = `Last scan: ${t} (took ${d.scan_duration}s) · Next scans: 7:35 AM and 7:35 PM`;
+      el.textContent = `Last scan: ${t} (${d.scan_duration}s) · Next: 7:35 AM and 7:35 PM daily`;
     } else {
       el.textContent = 'Waiting for first scan · Scheduled: 7:35 AM and 7:35 PM daily';
     }

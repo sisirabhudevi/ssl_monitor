@@ -2,9 +2,11 @@ import json
 import os
 import ssl
 import socket
+import smtplib
 import threading
 import time
-import requests
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime, date, timedelta
 
 from flask import Flask, render_template, request, redirect, url_for, jsonify
@@ -14,7 +16,6 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 
 CONFIG_FILE  = os.path.join(os.path.dirname(__file__), "config.json")
 ALERTS_FILE  = os.path.join(os.path.dirname(__file__), "alerts_sent.json")
-DOMAINS_FILE = os.path.join(os.path.dirname(__file__), "domains.json")
 WARN_DAYS    = 30
 SCAN_TIMES   = ((7, 35), (19, 35))  # scan 25 min early so alerts land by 8am and 8pm
 
@@ -28,14 +29,20 @@ _scan_lock          = threading.Lock()
 def load_config():
     if os.path.exists(CONFIG_FILE):
         cfg = json.load(open(CONFIG_FILE))
-        cfg.setdefault("slack_webhook", "")
-        cfg.setdefault("slack_bot_token", "")
+        cfg.setdefault("smtp_host", "")
+        cfg.setdefault("smtp_port", 587)
+        cfg.setdefault("smtp_user", "")
+        cfg.setdefault("smtp_password", "")
+        cfg.setdefault("alert_from", "")
         cfg.setdefault("domain_owners", {})
         return cfg
-    return {"slack_webhook": "", "slack_bot_token": "", "domain_owners": {}}
+    return {
+        "smtp_host": "", "smtp_port": 587, "smtp_user": "",
+        "smtp_password": "", "alert_from": "", "domain_owners": {},
+    }
 
 
-def save_config(slack_webhook, slack_bot_token, domain_owners_raw):
+def save_config(smtp_host, smtp_port, smtp_user, smtp_password, alert_from, domain_owners_raw):
     owners = {}
     for line in domain_owners_raw.splitlines():
         if ":" in line:
@@ -45,20 +52,11 @@ def save_config(slack_webhook, slack_bot_token, domain_owners_raw):
             if domain and email:
                 owners[domain] = email
     with open(CONFIG_FILE, "w") as f:
-        json.dump({"slack_webhook": slack_webhook,
-                   "slack_bot_token": slack_bot_token,
-                   "domain_owners": owners}, f, indent=2)
-
-
-def load_domains():
-    if os.path.exists(DOMAINS_FILE):
-        return json.load(open(DOMAINS_FILE))
-    return []
-
-
-def save_domains(domains):
-    with open(DOMAINS_FILE, "w") as f:
-        json.dump(domains, f, indent=2)
+        json.dump({
+            "smtp_host": smtp_host, "smtp_port": int(smtp_port or 587),
+            "smtp_user": smtp_user, "smtp_password": smtp_password,
+            "alert_from": alert_from, "domain_owners": owners,
+        }, f, indent=2)
 
 
 # ── Cert check ───────────────────────────────────────────────────────────────
@@ -81,9 +79,9 @@ def _should_alert(domain, days):
     if days is None:
         return None
     if days < 0:
-        return f"*{domain}* — certificate EXPIRED"
+        return f"{domain} — certificate EXPIRED"
     if days <= WARN_DAYS:
-        return f"*{domain}* — expires in {days} day{'s' if days != 1 else ''}"
+        return f"{domain} — expires in {days} day{'s' if days != 1 else ''}"
     return None
 
 
@@ -101,35 +99,55 @@ def _save_alerts(alerts):
         json.dump(alerts, f, indent=2)
 
 
-# ── Slack ────────────────────────────────────────────────────────────────────
+# ── Email ────────────────────────────────────────────────────────────────────
 
-_slack_uid_cache = {}
+def _send_email(config, to_address, subject, body_text, body_html=None):
+    host     = config.get("smtp_host", "")
+    port     = int(config.get("smtp_port", 587))
+    user     = config.get("smtp_user", "")
+    password = config.get("smtp_password", "")
+    from_addr = config.get("alert_from", "") or user
 
-def _slack_uid_for_email(email, bot_token):
-    if email in _slack_uid_cache:
-        return _slack_uid_cache[email]
+    if not host or not user or not to_address:
+        return
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"]    = f"cert-pulse <{from_addr}>"
+    msg["To"]      = to_address
+
+    msg.attach(MIMEText(body_text, "plain"))
+    if body_html:
+        msg.attach(MIMEText(body_html, "html"))
+
     try:
-        r = requests.get(
-            "https://slack.com/api/users.lookupByEmail",
-            headers={"Authorization": f"Bearer {bot_token}"},
-            params={"email": email},
-            timeout=10,
-        )
-        data = r.json()
-        if data.get("ok"):
-            uid = data["user"]["id"]
-            _slack_uid_cache[email] = uid
-            return uid
+        with smtplib.SMTP(host, port, timeout=15) as smtp:
+            smtp.ehlo()
+            smtp.starttls()
+            smtp.login(user, password)
+            smtp.sendmail(from_addr, [to_address], msg.as_string())
     except Exception:
         pass
-    return None
 
 
-def _post_slack(webhook, text):
-    try:
-        requests.post(webhook, json={"text": text}, timeout=10)
-    except Exception:
-        pass
+def _build_email_body(msgs, now_str):
+    plain = "\n".join(f"  - {m}" for m in msgs)
+    plain += f"\n\nGenerated: {now_str}\ncert-pulse"
+
+    rows = "".join(
+        f"<tr><td style='padding:8px 12px;border-bottom:1px solid #eee'>{m}</td></tr>"
+        for m in msgs
+    )
+    html = f"""<div style="font-family:sans-serif;max-width:520px">
+  <h2 style="color:#c0392b;margin-bottom:4px">SSL Certificate Alert</h2>
+  <table style="width:100%;border-collapse:collapse;margin-top:12px">
+    {rows}
+  </table>
+  <p style="color:#999;font-size:12px;margin-top:20px">
+    Generated: {now_str} &nbsp;·&nbsp; cert-pulse
+  </p>
+</div>"""
+    return plain, html
 
 
 # ── Background monitor ───────────────────────────────────────────────────────
@@ -139,52 +157,45 @@ def run_monitor():
     _t0 = time.time()
     with _scan_lock:
         config    = load_config()
-        webhook   = config.get("slack_webhook", "")
-        bot_token = config.get("slack_bot_token", "")
+        smtp_host = config.get("smtp_host", "")
 
-        if not webhook and not bot_token:
+        if not smtp_host:
             _last_scan_time = datetime.now()
             return
 
-        owners_map  = config.get("domain_owners", {})
-        domains     = list(owners_map.keys()) if owners_map else load_domains()
-        alerts      = _load_alerts()
-        slot        = "am" if datetime.now().hour < 12 else "pm"
-        today_slot  = f"{date.today()}-{slot}"
-        changed     = False
+        owners_map = config.get("domain_owners", {})
+        domains    = list(owners_map.keys())
+        if not domains:
+            _last_scan_time = datetime.now()
+            return
 
-        # Group alerts by owner: {email: [msg, ...]}
+        alerts     = _load_alerts()
+        slot       = "am" if datetime.now().hour < 12 else "pm"
+        today_slot = f"{date.today()}-{slot}"
+        changed    = False
+
         by_owner = {}
 
         for domain in domains:
             expiry_date, days, error = check_cert(domain)
             if error:
                 continue
-            key = domain
             msg = _should_alert(domain, days)
-            if msg and alerts.get(key) != today_slot:
-                owner_email = owners_map.get(domain.lower(), "unknown")
-                by_owner.setdefault(owner_email, []).append(
-                    f"{msg} _(expires {expiry_date})_"
-                )
-                alerts[key] = today_slot
+            if msg and alerts.get(domain) != today_slot:
+                owner_email = owners_map.get(domain.lower(), "")
+                label = f"{msg} (expires {expiry_date})"
+                by_owner.setdefault(owner_email, []).append(label)
+                alerts[domain] = today_slot
                 changed = True
 
-        if webhook and by_owner:
+        if by_owner:
             now_str = datetime.now().strftime("%Y-%m-%d %I:%M %p")
             for owner_email, msgs in by_owner.items():
-                mention = ""
-                if bot_token and owner_email != "unknown":
-                    uid = _slack_uid_for_email(owner_email, bot_token)
-                    if uid:
-                        mention = f" | <@{uid}>"
-
-                text = (
-                    f"🔴 *SSL Certificate Alert*{mention}\n\n"
-                    + "\n".join(f"  • {m}" for m in msgs)
-                    + f"\n\n🤖 _Automated Cert Report | Generated: {now_str}_"
-                )
-                _post_slack(webhook, text)
+                if not owner_email:
+                    continue
+                subject = f"SSL Alert: {len(msgs)} certificate{'s' if len(msgs) != 1 else ''} need attention"
+                plain, html = _build_email_body(msgs, now_str)
+                _send_email(config, owner_email, subject, plain, html)
 
         if changed:
             _save_alerts(alerts)
@@ -246,14 +257,13 @@ def monitor_status():
 def get_domains():
     config  = load_config()
     owners  = config.get("domain_owners", {})
-    domains = list(owners.keys()) if owners else load_domains()
     alerts  = _load_alerts()
     results = []
-    for domain in domains:
+    for domain, owner_email in owners.items():
         expiry_date, days, error = check_cert(domain)
         results.append({
             "domain":  domain,
-            "owner":   owners.get(domain.lower(), "—"),
+            "owner":   owner_email or "—",
             "expiry":  expiry_date,
             "days":    days,
             "error":   error,
@@ -265,8 +275,11 @@ def get_domains():
 @app.route("/save_settings", methods=["POST"])
 def save_settings():
     save_config(
-        request.form.get("slack_webhook", "").strip(),
-        request.form.get("slack_bot_token", "").strip(),
+        request.form.get("smtp_host", "").strip(),
+        request.form.get("smtp_port", "587").strip(),
+        request.form.get("smtp_user", "").strip(),
+        request.form.get("smtp_password", "").strip(),
+        request.form.get("alert_from", "").strip(),
         request.form.get("domain_owners_raw", "").strip(),
     )
     return redirect(url_for("index"))
