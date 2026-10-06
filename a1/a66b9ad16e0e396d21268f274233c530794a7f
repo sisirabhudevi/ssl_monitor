@@ -1,0 +1,19 @@
+.gitignore
+  s_503a4a5bccc101::t_87ae556a13976d 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "a1a66b9ad16e0e396d21268f274233c530794a7f",
+  "prompts": {},
+  "sessions": {
+    "s_503a4a5bccc101": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e3e5cc65-d200-4446-8a40-248dd07dd80a",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Sisira Bhudevi <sisirabhudevi@gmail.com>"
+    }
+  }
+}
